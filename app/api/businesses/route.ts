@@ -3,6 +3,10 @@ import { isAuthorizedAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { PersonBusiness } from "@/lib/types";
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function GET(request: Request) {
   try {
     if (!isAuthorizedAdmin(request)) {
@@ -11,8 +15,10 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
-    const q = searchParams.get("q")?.trim().toLowerCase();
+    const q = searchParams.get("q")?.trim();
     const status = searchParams.get("status"); // 'all' | 'pending' | 'approved'
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get("limit") || "20", 10)));
 
     const db = await getDb();
     if (!db) {
@@ -20,47 +26,84 @@ export async function GET(request: Request) {
     }
 
     const col = db.collection<PersonBusiness>("businesses");
-    let query: any = {};
+
+    // Concurrently fetch stats for top counters & pill badges
+    const [totalAll, totalPending, totalApproved] = await Promise.all([
+      col.countDocuments({}),
+      col.countDocuments({ isApproved: { $ne: true } }),
+      col.countDocuments({ isApproved: true }),
+    ]);
+
+    // Build query filter
+    const filter: any = {};
+    const andConditions: any[] = [];
 
     if (status === "pending") {
-      query.isApproved = { $ne: true };
+      andConditions.push({ isApproved: { $ne: true } });
     } else if (status === "approved") {
-      query.isApproved = true;
+      andConditions.push({ isApproved: true });
     }
 
     if (category && category !== "all") {
-      query.category = category;
+      andConditions.push({ category });
     }
 
-    let businesses = await col.find(query, { projection: { _id: 0 } }).toArray();
-
     if (q) {
-      businesses = businesses.filter((b) => {
-        const p1 = (b.personName || "").toLowerCase();
-        const p1g = (b.personNameGu || "").toLowerCase();
-        const p2 = (b.personName2 || "").toLowerCase();
-        const bn = (b.businessName || "").toLowerCase();
-        const bng = (b.businessNameGu || "").toLowerCase();
-        const city = (b.city || "").toLowerCase();
-        const ph = (b.phone || "");
-        const ph2 = (b.phone2 || "");
-        return (
-          p1.includes(q) ||
-          p1g.includes(q) ||
-          p2.includes(q) ||
-          bn.includes(q) ||
-          bng.includes(q) ||
-          city.includes(q) ||
-          ph.includes(q) ||
-          ph2.includes(q)
-        );
+      const regex = new RegExp(escapeRegex(q), "i");
+      andConditions.push({
+        $or: [
+          { businessName: { $regex: regex } },
+          { businessNameGu: { $regex: regex } },
+          { personName: { $regex: regex } },
+          { personNameGu: { $regex: regex } },
+          { personName2: { $regex: regex } },
+          { personName2Gu: { $regex: regex } },
+          { city: { $regex: regex } },
+          { cityGu: { $regex: regex } },
+          { village: { $regex: regex } },
+          { villageGu: { $regex: regex } },
+          { phone: { $regex: regex } },
+          { phone2: { $regex: regex } },
+          { whatsapp: { $regex: regex } },
+          { description: { $regex: regex } },
+          { descriptionGu: { $regex: regex } },
+          { comment: { $regex: regex } },
+        ],
       });
     }
 
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
+    }
+
+    const total = await col.countDocuments(filter);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const skip = (page - 1) * limit;
+
+    const businesses = await col
+      .find(filter, { projection: { _id: 0 } })
+      .sort({ createdAt: -1, businessName: 1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
     return NextResponse.json({
       success: true,
-      count: businesses.length,
+      count: total,
       data: businesses,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+      },
+      stats: {
+        total: totalAll,
+        pending: totalPending,
+        approved: totalApproved,
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to fetch businesses" }, { status: 500 });

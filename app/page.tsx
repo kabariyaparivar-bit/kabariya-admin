@@ -11,21 +11,37 @@ export default function AdminDashboardPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Login Form
-  const [loginUsername, setLoginUsername] = useState("admin");
-  const [loginPassword, setLoginPassword] = useState("kabariya@admin2026");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<"businesses" | "events" | "import" | "settings">("businesses");
+  const [activeTab, setActiveTab] = useState<"businesses" | "events" | "settings">("businesses");
 
   // Businesses State
   const [businesses, setBusinesses] = useState<PersonBusiness[]>([]);
   const [loadingBiz, setLoadingBiz] = useState(false);
   const [bizSearch, setBizSearch] = useState("");
+  const [debouncedBizSearch, setDebouncedBizSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [bizPage, setBizPage] = useState(1);
+  const [bizLimit] = useState(20);
+  const [bizPagination, setBizPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+    hasPrevPage: false,
+    hasNextPage: false,
+  });
+  const [bizStats, setBizStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+  });
 
   // Business Modal
   const [bizModalOpen, setBizModalOpen] = useState(false);
@@ -39,10 +55,6 @@ export default function AdminDashboardPage() {
   const [editingEvent, setEditingEvent] = useState<Partial<EventItem> | null>(null);
   const [deleteEventModal, setDeleteEventModal] = useState<EventItem | null>(null);
 
-  // Import State
-  const [importCsvText, setImportCsvText] = useState("");
-  const [importLoading, setImportLoading] = useState(false);
-  const [importSuccessMsg, setImportSuccessMsg] = useState("");
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -78,24 +90,57 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
-  // 2. Load data when authenticated
+  // Debounce search query (350ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedBizSearch(bizSearch);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [bizSearch]);
+
+  // Reset to page 1 on search or filter changes
+  useEffect(() => {
+    setBizPage(1);
+  }, [debouncedBizSearch, statusFilter, categoryFilter]);
+
+  // Load businesses when authenticated or query params change
   useEffect(() => {
     if (isAuthenticated && token) {
-      loadBusinesses();
+      loadBusinesses(bizPage, debouncedBizSearch, statusFilter, categoryFilter);
+    }
+  }, [isAuthenticated, token, bizPage, debouncedBizSearch, statusFilter, categoryFilter]);
+
+  // Load events on initial authentication
+  useEffect(() => {
+    if (isAuthenticated && token) {
       loadEvents();
     }
   }, [isAuthenticated, token]);
 
-  const loadBusinesses = async () => {
+  const loadBusinesses = async (
+    pageToLoad = bizPage,
+    search = debouncedBizSearch,
+    status = statusFilter,
+    cat = categoryFilter
+  ) => {
     if (!token) return;
     setLoadingBiz(true);
     try {
-      const res = await fetch("/api/businesses", {
+      const params = new URLSearchParams();
+      params.set("page", String(pageToLoad));
+      params.set("limit", String(bizLimit));
+      if (status !== "all") params.set("status", status);
+      if (cat !== "all") params.set("category", cat);
+      if (search.trim()) params.set("q", search.trim());
+
+      const res = await fetch(`/api/businesses?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setBusinesses(data.data);
+        if (data.pagination) setBizPagination(data.pagination);
+        if (data.stats) setBizStats(data.stats);
       }
     } catch {
       showToast("Failed to load businesses", "error");
@@ -141,6 +186,7 @@ export default function AdminDashboardPage() {
         setToken(data.token);
         setCurrentUser(data.user);
         setIsAuthenticated(true);
+        setLoginPassword("");
         showToast("Signed in successfully!");
       } else {
         setLoginError(data.error || "Invalid username or password");
@@ -157,6 +203,8 @@ export default function AdminDashboardPage() {
     setToken(null);
     setCurrentUser(null);
     setIsAuthenticated(false);
+    setLoginUsername("");
+    setLoginPassword("");
     showToast("Signed out successfully");
   };
 
@@ -308,30 +356,24 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Counts & Filtered Businesses
-  const pendingCount = useMemo(() => businesses.filter((b) => b.isApproved !== true).length, [businesses]);
-  const approvedCount = useMemo(() => businesses.filter((b) => b.isApproved === true).length, [businesses]);
+  // Counts & Dynamic Pagination Numbers
+  const pendingCount = bizStats.pending;
+  const approvedCount = bizStats.approved;
+  const totalCount = bizStats.total;
 
-  const filteredBusinesses = useMemo(() => {
-    return businesses.filter((b) => {
-      if (statusFilter === "pending" && b.isApproved === true) return false;
-      if (statusFilter === "approved" && b.isApproved !== true) return false;
-      if (categoryFilter !== "all" && b.category !== categoryFilter) return false;
-
-      if (bizSearch.trim()) {
-        const q = bizSearch.toLowerCase().trim();
-        const p1 = (b.personName || "").toLowerCase();
-        const p2 = (b.personName2 || "").toLowerCase();
-        const bn = (b.businessName || "").toLowerCase();
-        const city = (b.city || "").toLowerCase();
-        const ph = (b.phone || "");
-        if (!p1.includes(q) && !p2.includes(q) && !bn.includes(q) && !city.includes(q) && !ph.includes(q)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [businesses, statusFilter, categoryFilter, bizSearch]);
+  const bizPageNumbers = useMemo(() => {
+    const totalPages = bizPagination.totalPages;
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (bizPage <= 4) {
+      return [1, 2, 3, 4, 5, "...", totalPages];
+    }
+    if (bizPage >= totalPages - 3) {
+      return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, "...", bizPage - 1, bizPage, bizPage + 1, "...", totalPages];
+  }, [bizPage, bizPagination.totalPages]);
 
   if (checkingAuth) {
     return (
@@ -370,7 +412,7 @@ export default function AdminDashboardPage() {
                 className="admin-form-control"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="Enter username"
                 required
                 autoFocus
               />
@@ -392,7 +434,7 @@ export default function AdminDashboardPage() {
                 className="admin-form-control"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Enter password"
                 required
               />
             </div>
@@ -464,13 +506,6 @@ export default function AdminDashboardPage() {
             </button>
             <button
               type="button"
-              className={`admin-tab-btn ${activeTab === "import" ? "active" : ""}`}
-              onClick={() => setActiveTab("import")}
-            >
-              <span>📥 Sheet CSV Import</span>
-            </button>
-            <button
-              type="button"
               className={`admin-tab-btn ${activeTab === "settings" ? "active" : ""}`}
               onClick={() => setActiveTab("settings")}
             >
@@ -503,7 +538,7 @@ export default function AdminDashboardPage() {
             <div className="admin-stat-icon" style={{ background: "#e0f2fe", color: "#0369a1" }}>🏢</div>
             <div>
               <div className="admin-stat-label">Total Businesses</div>
-              <div className="admin-stat-value">{businesses.length}</div>
+              <div className="admin-stat-value">{totalCount}</div>
             </div>
           </div>
 
@@ -562,7 +597,7 @@ export default function AdminDashboardPage() {
                   className={`admin-pill-btn ${statusFilter === "all" ? "active" : ""}`}
                   onClick={() => setStatusFilter("all")}
                 >
-                  All ({businesses.length})
+                  All ({totalCount})
                 </button>
                 <button
                   type="button"
@@ -616,17 +651,20 @@ export default function AdminDashboardPage() {
                     {loadingBiz ? (
                       <tr>
                         <td colSpan={6} style={{ textAlign: "center", padding: "40px" }}>
-                          Loading businesses from MongoDB Atlas...
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+                            <span className="admin-spinner" />
+                            <span style={{ fontSize: "0.88rem", color: "#64748b" }}>Loading businesses from MongoDB Atlas...</span>
+                          </div>
                         </td>
                       </tr>
-                    ) : filteredBusinesses.length === 0 ? (
+                    ) : businesses.length === 0 ? (
                       <tr>
                         <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>
                           No businesses matched your search/filter.
                         </td>
                       </tr>
                     ) : (
-                      filteredBusinesses.map((biz) => (
+                      businesses.map((biz) => (
                         <tr key={biz.id}>
                           <td>
                             <div style={{ fontWeight: 700, color: "#0f172a" }}>{biz.businessName}</div>
@@ -705,6 +743,63 @@ export default function AdminDashboardPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Admin Pagination Bar */}
+              <div className="admin-pagination-bar">
+                <div className="admin-pagination-info">
+                  {bizPagination.total > 0 ? (
+                    <>
+                      Showing <strong>{(bizPage - 1) * bizPagination.limit + 1}</strong> to{" "}
+                      <strong>{Math.min(bizPage * bizPagination.limit, bizPagination.total)}</strong> of{" "}
+                      <strong>{bizPagination.total}</strong> businesses
+                    </>
+                  ) : (
+                    "No businesses found"
+                  )}
+                </div>
+
+                {bizPagination.totalPages > 1 && (
+                  <div className="admin-pagination-nav">
+                    <button
+                      type="button"
+                      disabled={!bizPagination.hasPrevPage || loadingBiz}
+                      onClick={() => setBizPage((p) => Math.max(1, p - 1))}
+                      className="admin-page-btn"
+                      title="Previous Page"
+                    >
+                      ← Prev
+                    </button>
+
+                    {bizPageNumbers.map((p, idx) =>
+                      p === "..." ? (
+                        <span key={`ellipsis-${idx}`} className="admin-page-ellipsis">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={`page-${p}`}
+                          type="button"
+                          className={`admin-page-btn ${bizPage === p ? "active" : ""}`}
+                          onClick={() => setBizPage(Number(p))}
+                          disabled={loadingBiz}
+                        >
+                          {p}
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={!bizPagination.hasNextPage || loadingBiz}
+                      onClick={() => setBizPage((p) => Math.min(bizPagination.totalPages, p + 1))}
+                      className="admin-page-btn"
+                      title="Next Page"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -819,86 +914,6 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* TAB 3: GOOGLE SHEET CSV IMPORT                               */}
-        {/* ============================================================ */}
-        {activeTab === "import" && (
-          <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-            <div className="admin-table-card" style={{ padding: "28px" }}>
-              <h3 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "8px" }}>
-                📥 Bulk Import Businesses via Google Sheet CSV
-              </h3>
-              <p style={{ fontSize: "0.88rem", color: "#64748b", lineHeight: 1.6, marginBottom: "20px" }}>
-                Export your Google Sheet as CSV, paste the text below, and click <strong>Import to Database</strong>. All entries will be created in MongoDB Atlas.
-              </p>
-
-              {importSuccessMsg && (
-                <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", color: "#065f46", padding: "12px", borderRadius: "8px", marginBottom: "16px" }}>
-                  ✓ {importSuccessMsg}
-                </div>
-              )}
-
-              <div className="admin-form-group">
-                <label className="admin-form-label">Paste CSV Content</label>
-                <textarea
-                  className="admin-form-control"
-                  rows={8}
-                  value={importCsvText}
-                  onChange={(e) => setImportCsvText(e.target.value)}
-                  placeholder="Timestamp,Business Name,Category,Owner Name,Phone,City,Address..."
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn-primary"
-                  disabled={importLoading || !importCsvText.trim()}
-                  onClick={async () => {
-                    setImportLoading(true);
-                    setImportSuccessMsg("");
-                    try {
-                      // Basic CSV parsing
-                      const lines = importCsvText.trim().split("\n");
-                      let imported = 0;
-                      for (let i = 1; i < lines.length; i++) {
-                        const cols = lines[i].split(",");
-                        if (cols.length >= 3 && cols[1]) {
-                          await fetch("/api/businesses", {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                              Authorization: `Bearer ${token}`,
-                            },
-                            body: JSON.stringify({
-                              businessName: cols[1]?.trim(),
-                              personName: cols[2]?.trim() || "Kabariya Parivar Member",
-                              phone: cols[3]?.trim() || "",
-                              city: cols[4]?.trim() || "Savarkundla",
-                              category: "other",
-                              isApproved: true,
-                              isActive: true,
-                            }),
-                          });
-                          imported++;
-                        }
-                      }
-                      setImportSuccessMsg(`Successfully imported ${imported} records directly into MongoDB Atlas!`);
-                      setImportCsvText("");
-                      loadBusinesses();
-                    } catch {
-                      showToast("Import error", "error");
-                    } finally {
-                      setImportLoading(false);
-                    }
-                  }}
-                >
-                  {importLoading ? "Importing to MongoDB..." : "Import to MongoDB Atlas"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ============================================================ */}
         {/* TAB 4: SETTINGS                                              */}

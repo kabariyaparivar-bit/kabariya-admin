@@ -592,3 +592,88 @@ body {
     font-size: 16px !important;
   }
 }
+
+/* =========================================================
+   Admin Table Pagination & Loader
+   ========================================================= */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.admin-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid #e2e8f0;
+  border-top-color: var(--admin-primary);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.admin-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-top: 1px solid var(--admin-slate-200);
+  background: var(--admin-white);
+  border-radius: 0 0 var(--admin-radius-lg) var(--admin-radius-lg);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-pagination-info {
+  font-size: 0.85rem;
+  color: var(--admin-slate-500);
+  font-weight: 500;
+}
+
+.admin-pagination-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--admin-radius-sm);
+  border: 1px solid var(--admin-slate-300);
+  background: var(--admin-white);
+  color: var(--admin-slate-700);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-page-btn:hover:not(:disabled) {
+  border-color: var(--admin-primary);
+  color: var(--admin-primary);
+  background: var(--admin-primary-light);
+}
+
+.admin-page-btn.active {
+  background: var(--admin-primary);
+  color: #ffffff;
+  border-color: var(--admin-primary);
+  box-shadow: 0 2px 6px rgba(158, 31, 38, 0.25);
+}
+
+.admin-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.admin-page-ellipsis {
+  color: var(--admin-slate-400);
+  padding: 0 4px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+

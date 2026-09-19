@@ -1,6 +1,6 @@
 # 🏛️ Kabariya Parivar - Standalone Admin Portal
 
-This is the independent, dedicated Admin Control Panel for the **Kabariya Parivar** community platform. It connects directly to MongoDB Atlas to manage business listings, approval workflows, events, and bulk data imports.
+This is the independent, dedicated Admin Control Panel for the **Kabariya Parivar** community platform. It connects directly to MongoDB Atlas to manage business listings, approval workflows, and community events.
 
 ---
 
@@ -15,7 +15,6 @@ This is the independent, dedicated Admin Control Panel for the **Kabariya Pariva
    - Search by business name, owner name, city, phone.
    - Full editor for dual owners, phone 2, Google Map link, visiting card, and comments.
 5. **Event Management**: Create, edit, schedule, reorder, and toggle status of community events.
-6. **Bulk CSV Import**: Import Google Sheet rows directly into MongoDB.
 
 ---
 
@@ -31,10 +30,10 @@ npm install
 Copy `.env.example` to `.env.local` (already pre-configured with MongoDB Atlas connection string):
 ```bash
 # Ensure .env.local exists with:
-MONGODB_URI=mongodb://kabariyaparivar_db_user:TZBX2Xvo8UGQt5L3@ac-x9mlxos-shard-00-00.45r1dny.mongodb.net:27017,ac-x9mlxos-shard-00-01.45r1dny.mongodb.net:27017,ac-x9mlxos-shard-00-02.45r1dny.mongodb.net:27017/kabariyaparivar?ssl=true&replicaSet=atlas-6k086k-shard-0&authSource=admin&retryWrites=true&w=majority
-JWT_SECRET=kabariya_parivar_jwt_secret_2026_60d_auth_token_key
-ADMIN_DEFAULT_USERNAME=admin
-ADMIN_DEFAULT_PASSWORD=kabariya@admin2026
+MONGODB_URI=mongodb:///kabariyaparivar?ssl=true&replicaSet=atlas-6k086k-shard-0&authSource=admin&retryWrites=true&w=majority
+JWT_SECRET=************************
+ADMIN_DEFAULT_USERNAME=********
+ADMIN_DEFAULT_PASSWORD=**********
 ```
 
 ### 3. Start the Development Server
