@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { PersonBusiness } from "@/lib/types";
+import { autoTranslatePair } from "@/lib/translate";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -119,26 +120,46 @@ export async function POST(request: Request) {
     const body = await request.json();
     const id = body.id || `biz-${Date.now()}`;
 
+    const [
+      translatedBiz,
+      translatedPerson,
+      translatedPerson2,
+      translatedCity,
+      translatedAddress,
+      translatedDesc,
+    ] = await Promise.all([
+      autoTranslatePair(body.businessName, body.businessNameGu),
+      autoTranslatePair(body.personName, body.personNameGu),
+      body.personName2 || body.personName2Gu
+        ? autoTranslatePair(body.personName2, body.personName2Gu)
+        : Promise.resolve({ en: "", gu: "" }),
+      autoTranslatePair(body.city, body.cityGu),
+      body.address || body.addressGu
+        ? autoTranslatePair(body.address, body.addressGu)
+        : Promise.resolve({ en: "", gu: "" }),
+      autoTranslatePair(body.description, body.descriptionGu),
+    ]);
+
     const newBiz: PersonBusiness = {
       id,
-      personName: body.personName || body.personNameGu || "",
-      personNameGu: body.personNameGu || body.personName || "",
-      personName2: body.personName2 || "",
-      personName2Gu: body.personName2Gu || "",
+      personName: translatedPerson.en || body.personName || "",
+      personNameGu: translatedPerson.gu || body.personNameGu || "",
+      personName2: translatedPerson2.en || body.personName2 || "",
+      personName2Gu: translatedPerson2.gu || body.personName2Gu || "",
       personPhoto: body.personPhoto || "",
       village: body.village || "Savarkundla",
       villageGu: body.villageGu || "સાવરકુંડલા",
-      businessName: body.businessName || body.businessNameGu || "",
-      businessNameGu: body.businessNameGu || body.businessName || "",
+      businessName: translatedBiz.en || body.businessName || "",
+      businessNameGu: translatedBiz.gu || body.businessNameGu || "",
       category: body.category || "other",
       categoryLabelEn: body.categoryLabelEn || "Business",
       categoryLabelGu: body.categoryLabelGu || "વ્યવસાય",
-      city: body.city || "Savarkundla",
-      cityGu: body.cityGu || "સાવરકુંડલા",
+      city: translatedCity.en || body.city || "Savarkundla",
+      cityGu: translatedCity.gu || body.cityGu || "સાવરકુંડલા",
       state: body.state || "Gujarat",
       stateGu: body.stateGu || "ગુજરાત",
-      address: body.address || "",
-      addressGu: body.addressGu || "",
+      address: translatedAddress.en || body.address || "",
+      addressGu: translatedAddress.gu || body.addressGu || "",
       mapUrl: body.mapUrl || "",
       phone: body.phone || "",
       phone2: body.phone2 || "",
@@ -147,8 +168,8 @@ export async function POST(request: Request) {
       website: body.website || "",
       images: body.images || "",
       comment: body.comment || "",
-      description: body.description || "",
-      descriptionGu: body.descriptionGu || "",
+      description: translatedDesc.en || body.description || "",
+      descriptionGu: translatedDesc.gu || body.descriptionGu || "",
       services: body.services || [],
       servicesGu: body.servicesGu || [],
       establishedYear: body.establishedYear || "",

@@ -47,6 +47,8 @@ export default function AdminDashboardPage() {
   const [bizModalOpen, setBizModalOpen] = useState(false);
   const [editingBiz, setEditingBiz] = useState<Partial<PersonBusiness> | null>(null);
   const [deleteBizModal, setDeleteBizModal] = useState<PersonBusiness | null>(null);
+  const [uploadingBizCard, setUploadingBizCard] = useState(false);
+  const [previewCard, setPreviewCard] = useState<{ url: string; title: string; person?: string } | null>(null);
 
   // Events State
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -255,6 +257,49 @@ export default function AdminDashboardPage() {
       }
     } catch {
       showToast("Network error updating active status", "error");
+    }
+  };
+
+  // Upload Visiting Card / Photo via API
+  const handleAdminCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Please select an image file (JPG, PNG, WebP).", "error");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("Photo size must be less than 10 MB.", "error");
+      return;
+    }
+
+    setUploadingBizCard(true);
+    try {
+      const uploadData = new FormData();
+      uploadData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: uploadData,
+      });
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        setEditingBiz((prev) => (prev ? { ...prev, images: data.url } : { images: data.url }));
+        showToast("Visiting card uploaded successfully!", "success");
+      } else {
+        throw new Error(data.error || "Upload failed");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to upload visiting card.", "error");
+    } finally {
+      setUploadingBizCard(false);
+      e.target.value = "";
     }
   };
 
@@ -675,6 +720,29 @@ export default function AdminDashboardPage() {
                             {biz.comment && (
                               <div style={{ fontSize: "0.74rem", color: "#d97706", fontStyle: "italic", marginTop: "2px" }}>
                                 Note: {biz.comment}
+                              </div>
+                            )}
+                            {biz.images && (
+                              <div style={{ marginTop: "4px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewCard({ url: biz.images!, title: biz.businessName, person: biz.personName })}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                    fontSize: "0.72rem",
+                                    color: "#0369a1",
+                                    background: "#e0f2fe",
+                                    border: "1px solid #bae6fd",
+                                    padding: "2px 8px",
+                                    borderRadius: "4px",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  🪪 Visiting Card
+                                </button>
                               </div>
                             )}
                           </td>
@@ -1098,14 +1166,49 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div className="admin-form-group">
-                    <label className="admin-form-label">Visiting Card / Photo Link</label>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <label className="admin-form-label" style={{ margin: 0 }}>Visiting Card / Photo</label>
+                      <label style={{ fontSize: "0.78rem", color: "#3b82f6", cursor: "pointer", fontWeight: 600 }}>
+                        {uploadingBizCard ? "Uploading..." : "📷 Upload Image"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          disabled={uploadingBizCard}
+                          onChange={handleAdminCardUpload}
+                        />
+                      </label>
+                    </div>
                     <input
                       type="url"
                       className="admin-form-control"
                       value={editingBiz.images || ""}
                       onChange={(e) => setEditingBiz({ ...editingBiz, images: e.target.value })}
-                      placeholder="https://drive.google.com/..."
+                      placeholder="https://res.cloudinary.com/... or paste link"
                     />
+                    {editingBiz.images && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "6px" }}>
+                        <img
+                          src={editingBiz.images}
+                          alt="Card Preview"
+                          style={{ width: "48px", height: "32px", objectFit: "cover", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewCard({ url: editingBiz.images!, title: editingBiz.businessName || "Visiting Card", person: editingBiz.personName })}
+                          style={{ background: "none", border: "none", fontSize: "0.78rem", color: "#3b82f6", textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                        >
+                          View Full Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingBiz({ ...editingBiz, images: "" })}
+                          style={{ background: "none", border: "none", color: "#ef4444", fontSize: "0.78rem", cursor: "pointer", padding: 0 }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1400,6 +1503,49 @@ export default function AdminDashboardPage() {
                 onClick={handleDeleteEvent}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Visiting Card Lightbox Modal */}
+      {previewCard && (
+        <div
+          className="admin-modal-overlay"
+          onClick={(e) => e.target === e.currentTarget && setPreviewCard(null)}
+          style={{ zIndex: 99999 }}
+        >
+          <div className="admin-modal-content" style={{ maxWidth: "700px" }}>
+            <div className="admin-modal-header" style={{ background: "#f8fafc" }}>
+              <div>
+                <h3 className="admin-modal-title" style={{ fontSize: "1.1rem" }}>{previewCard.title}</h3>
+                {previewCard.person && (
+                  <div style={{ fontSize: "0.82rem", color: "#64748b" }}>Contact: {previewCard.person}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewCard(null)}
+                style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer" }}
+              >
+                &times;
+              </button>
+            </div>
+            <div style={{ padding: "16px", background: "#0f172a", display: "flex", justifyContent: "center", alignItems: "center" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewCard.url}
+                alt={previewCard.title}
+                style={{ maxWidth: "100%", maxHeight: "65vh", objectFit: "contain", borderRadius: "6px" }}
+              />
+            </div>
+            <div style={{ padding: "12px 18px", display: "flex", justifyContent: "flex-end", background: "#f8fafc" }}>
+              <button
+                type="button"
+                onClick={() => setPreviewCard(null)}
+                className="admin-btn admin-btn-secondary admin-btn-sm"
+              >
+                Close
               </button>
             </div>
           </div>
