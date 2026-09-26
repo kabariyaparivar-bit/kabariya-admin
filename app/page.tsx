@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { PersonBusiness, BUSINESS_CATEGORIES, EventItem, AdminUser } from "@/lib/types";
+import { SearchableSelect, SelectOption } from "@/components/SearchableSelect";
 
 export default function AdminDashboardPage() {
   // Auth State
@@ -60,6 +61,152 @@ export default function AdminDashboardPage() {
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // Locations Dynamic State for Admin Business Form
+  const [locCountries, setLocCountries] = useState<Array<{ isoCode: string; name: string; nameGu?: string; flag?: string }>>([]);
+  const [locStates, setLocStates] = useState<Array<{ isoCode: string; name: string; nameGu?: string }>>([]);
+  const [locCities, setLocCities] = useState<Array<{ name: string; nameGu?: string }>>([]);
+  const [locLoadingStates, setLocLoadingStates] = useState(false);
+  const [locLoadingCities, setLocLoadingCities] = useState(false);
+  const [isCustomCity, setIsCustomCity] = useState(false);
+  const [customCityInput, setCustomCityInput] = useState("");
+
+  useEffect(() => {
+    fetch("/api/locations?type=countries")
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData?.success && Array.isArray(resData.data)) {
+          setLocCountries(resData.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!bizModalOpen || !editingBiz?.country) {
+      setLocStates([]);
+      setLocCities([]);
+      return;
+    }
+    setLocLoadingStates(true);
+    fetch(`/api/locations?country=${encodeURIComponent(editingBiz.country)}`)
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData?.success && Array.isArray(resData.data)) {
+          setLocStates(resData.data);
+          if ((editingBiz.country === "IN" || editingBiz.country === "India") && !editingBiz.state) {
+            const gj = resData.data.find((s: any) => s.isoCode === "GJ" || s.name === "Gujarat");
+            if (gj) {
+              setEditingBiz((prev) => prev ? { ...prev, state: gj.name, stateGu: gj.nameGu || "ગુજરાત" } : prev);
+            }
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLocLoadingStates(false));
+  }, [bizModalOpen, editingBiz?.country]);
+
+  useEffect(() => {
+    if (!bizModalOpen || !editingBiz?.country || !editingBiz?.state) {
+      setLocCities([]);
+      return;
+    }
+    setLocLoadingCities(true);
+    fetch(`/api/locations?country=${encodeURIComponent(editingBiz.country)}&state=${encodeURIComponent(editingBiz.state)}`)
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData?.success && Array.isArray(resData.data)) {
+          setLocCities(resData.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLocLoadingCities(false));
+  }, [bizModalOpen, editingBiz?.country, editingBiz?.state]);
+
+  const adminCategoryOptions: SelectOption[] = useMemo(() => {
+    return BUSINESS_CATEGORIES.filter((c) => c.id !== "all").map((cat) => ({
+      value: cat.id,
+      label: cat.nameEn,
+      labelGu: cat.nameGu,
+      icon: cat.icon,
+    }));
+  }, []);
+
+  const adminCountryOptions: SelectOption[] = useMemo(() => {
+    return locCountries.map((c) => ({
+      value: c.name,
+      label: c.name,
+      labelGu: c.nameGu || c.name,
+      icon: c.isoCode === "IN" ? "🇮🇳" : (c.flag || "🌐"),
+      badge: c.isoCode,
+    }));
+  }, [locCountries]);
+
+  const adminStateOptions: SelectOption[] = useMemo(() => {
+    return locStates.map((s) => ({
+      value: s.name,
+      label: s.name,
+      labelGu: s.nameGu || s.name,
+      badge: s.isoCode,
+    }));
+  }, [locStates]);
+
+  const adminCityOptions: SelectOption[] = useMemo(() => {
+    return locCities.map((ct) => ({
+      value: ct.name,
+      label: ct.name,
+      labelGu: ct.nameGu || ct.name,
+    }));
+  }, [locCities]);
+
+  const handleAdminCountryChange = (val: string, opt?: SelectOption) => {
+    setEditingBiz((prev) => prev ? {
+      ...prev,
+      country: val,
+      countryGu: opt?.labelGu || val,
+      state: "",
+      stateGu: "",
+      city: "",
+      cityGu: "",
+    } : prev);
+    setIsCustomCity(false);
+    setCustomCityInput("");
+  };
+
+  const handleAdminStateChange = (val: string, opt?: SelectOption) => {
+    setEditingBiz((prev) => prev ? {
+      ...prev,
+      state: val,
+      stateGu: opt?.labelGu || val,
+      city: "",
+      cityGu: "",
+    } : prev);
+    setIsCustomCity(false);
+    setCustomCityInput("");
+  };
+
+  const handleAdminCityChange = (val: string, opt?: SelectOption) => {
+    if (val === "__custom__" || opt?.isCustom) {
+      setIsCustomCity(true);
+      const customVal = opt?.label && opt.label !== "Other / Custom" && !opt.label.startsWith("✦")
+        ? opt.label
+        : customCityInput;
+      setCustomCityInput(customVal);
+      setEditingBiz((prev) => prev ? {
+        ...prev,
+        city: customVal || "__custom__",
+        cityGu: customVal || "__custom__",
+      } : prev);
+    } else {
+      setIsCustomCity(false);
+      setCustomCityInput("");
+      setEditingBiz((prev) => prev ? {
+        ...prev,
+        city: val,
+        cityGu: opt?.labelGu || val,
+      } : prev);
+    }
+  };
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
@@ -270,8 +417,8 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      showToast("Photo size must be less than 10 MB.", "error");
+    if (file.size > 1 * 1024 * 1024) {
+      showToast("Photo size must be less than 1 MB.", "error");
       return;
     }
 
@@ -309,6 +456,22 @@ export default function AdminDashboardPage() {
     if (!editingBiz || !token) return;
 
     try {
+      const finalCity = isCustomCity ? customCityInput.trim() : (editingBiz.city || "").trim();
+      if (!finalCity || finalCity === "__custom__") {
+        showToast("Please enter or select City", "error");
+        return;
+      }
+
+      const payload = {
+        ...editingBiz,
+        country: editingBiz.country || "India",
+        countryGu: editingBiz.countryGu || "ભારત",
+        state: editingBiz.state || "Gujarat",
+        stateGu: editingBiz.stateGu || "ગુજરાત",
+        city: finalCity,
+        cityGu: isCustomCity ? finalCity : (editingBiz.cityGu || finalCity),
+      };
+
       const isNew = !editingBiz.id;
       const res = await fetch("/api/businesses", {
         method: isNew ? "POST" : "PATCH",
@@ -316,7 +479,7 @@ export default function AdminDashboardPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(editingBiz),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
@@ -667,10 +830,19 @@ export default function AdminDashboardPage() {
                 onClick={() => {
                   setEditingBiz({
                     category: "textiles",
+                    categoryLabelEn: "Textiles & Garments",
+                    categoryLabelGu: "કાપડ & ગારમેન્ટ્સ",
                     isApproved: true,
                     isActive: true,
+                    country: "India",
+                    countryGu: "ભારત",
                     state: "Gujarat",
+                    stateGu: "ગુજરાત",
+                    city: "",
+                    cityGu: "",
                   });
+                  setIsCustomCity(false);
+                  setCustomCityInput("");
                   setBizModalOpen(true);
                 }}
               >
@@ -790,7 +962,16 @@ export default function AdminDashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setEditingBiz(biz);
+                                  const bizToEdit = {
+                                    ...biz,
+                                    country: biz.country || "India",
+                                    countryGu: biz.countryGu || "ભારત",
+                                    state: biz.state || "Gujarat",
+                                    stateGu: biz.stateGu || "ગુજરાત",
+                                  };
+                                  setEditingBiz(bizToEdit);
+                                  setIsCustomCity(false);
+                                  setCustomCityInput(biz.city || "");
                                   setBizModalOpen(true);
                                 }}
                                 className="admin-btn admin-btn-secondary admin-btn-sm"
@@ -1049,25 +1230,21 @@ export default function AdminDashboardPage() {
 
                   <div className="admin-form-group">
                     <label className="admin-form-label">Category *</label>
-                    <select
-                      className="admin-form-control"
-                      value={editingBiz.category || "other"}
-                      onChange={(e) => {
-                        const cat = BUSINESS_CATEGORIES.find((c) => c.id === e.target.value);
+                    <SearchableSelect
+                      options={adminCategoryOptions}
+                      value={editingBiz.category || "textiles"}
+                      onChange={(val, opt) => {
                         setEditingBiz({
                           ...editingBiz,
-                          category: e.target.value,
-                          categoryLabelEn: cat?.nameEn || e.target.value,
-                          categoryLabelGu: cat?.nameGu || e.target.value,
+                          category: val,
+                          categoryLabelEn: opt?.label || val,
+                          categoryLabelGu: opt?.labelGu || val,
                         });
                       }}
-                    >
-                      {BUSINESS_CATEGORIES.filter((c) => c.id !== "all").map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.icon} {cat.nameEn} ({cat.nameGu})
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Category"
+                      searchPlaceholder="Search category..."
+                      required
+                    />
                   </div>
                 </div>
 
@@ -1117,26 +1294,87 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
+                {/* Location Row: Country & State */}
                 <div className="admin-form-row">
                   <div className="admin-form-group">
-                    <label className="admin-form-label">City *</label>
-                    <input
-                      type="text"
-                      className="admin-form-control"
-                      value={editingBiz.city || ""}
-                      onChange={(e) => setEditingBiz({ ...editingBiz, city: e.target.value })}
+                    <label className="admin-form-label">Country (દેશ) *</label>
+                    <SearchableSelect
+                      options={adminCountryOptions}
+                      value={editingBiz.country || "India"}
+                      onChange={handleAdminCountryChange}
+                      placeholder="Select Country"
+                      searchPlaceholder="Search country (e.g. India, USA)..."
                       required
                     />
                   </div>
 
                   <div className="admin-form-group">
-                    <label className="admin-form-label">Native Village (ગામ)</label>
+                    <label className="admin-form-label">State (રાજ્ય) *</label>
+                    <SearchableSelect
+                      options={adminStateOptions}
+                      value={editingBiz.state || "Gujarat"}
+                      onChange={handleAdminStateChange}
+                      placeholder="Select State"
+                      searchPlaceholder="Search state (e.g. Gujarat, Maharashtra)..."
+                      disabled={locLoadingStates || adminStateOptions.length === 0}
+                      loading={locLoadingStates}
+                      loadingText="Loading states..."
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Location Row: City & Village */}
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">City (શહેર) *</label>
+                    <SearchableSelect
+                      options={adminCityOptions}
+                      value={isCustomCity ? "__custom__" : (editingBiz.city || "")}
+                      onChange={handleAdminCityChange}
+                      placeholder="Select City"
+                      searchPlaceholder="Search city (e.g. Surat, Savarkundla)..."
+                      disabled={locLoadingCities || !editingBiz.state}
+                      loading={locLoadingCities}
+                      loadingText="Loading cities..."
+                      allowCustomOption={true}
+                      customOptionLabel="✦ Other City / Village (Type custom)..."
+                      customOptionLabelGu="✦ અન્ય શહેર / ગામ (અહીં જાતે લખો)..."
+                      onCustomOptionSelect={() => setIsCustomCity(true)}
+                      onCustomTextSubmit={(txt) => {
+                        setIsCustomCity(true);
+                        setCustomCityInput(txt);
+                        setEditingBiz((prev) => prev ? { ...prev, city: txt, cityGu: txt } : prev);
+                      }}
+                      required
+                    />
+
+                    {isCustomCity && (
+                      <div style={{ marginTop: "8px" }}>
+                        <input
+                          type="text"
+                          className="admin-form-control"
+                          value={customCityInput}
+                          onChange={(e) => {
+                            setCustomCityInput(e.target.value);
+                            setEditingBiz({ ...editingBiz, city: e.target.value, cityGu: e.target.value });
+                          }}
+                          placeholder="Enter custom city or village name..."
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="admin-form-group">
+                    <label className="admin-form-label">Native Village (મૂળ વતન / ગામ)</label>
                     <input
                       type="text"
                       className="admin-form-control"
                       value={editingBiz.village || ""}
                       onChange={(e) => setEditingBiz({ ...editingBiz, village: e.target.value })}
-                      placeholder="Savarkundla"
+                      placeholder="e.g. Savarkundla"
                     />
                   </div>
                 </div>

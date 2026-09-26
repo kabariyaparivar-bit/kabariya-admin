@@ -21,6 +21,8 @@ export interface PersonBusiness {
   cityGu: string;
   state?: string;
   stateGu?: string;
+  country?: string;
+  countryGu?: string;
   mapUrl?: string;
   phone: string;
   phone2?: string;

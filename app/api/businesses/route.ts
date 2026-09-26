@@ -125,6 +125,7 @@ export async function POST(request: Request) {
       translatedPerson,
       translatedPerson2,
       translatedCity,
+      translatedVillage,
       translatedAddress,
       translatedDesc,
     ] = await Promise.all([
@@ -134,6 +135,9 @@ export async function POST(request: Request) {
         ? autoTranslatePair(body.personName2, body.personName2Gu)
         : Promise.resolve({ en: "", gu: "" }),
       autoTranslatePair(body.city, body.cityGu),
+      body.village || body.villageGu
+        ? autoTranslatePair(body.village, body.villageGu)
+        : Promise.resolve({ en: "", gu: "" }),
       body.address || body.addressGu
         ? autoTranslatePair(body.address, body.addressGu)
         : Promise.resolve({ en: "", gu: "" }),
@@ -147,8 +151,8 @@ export async function POST(request: Request) {
       personName2: translatedPerson2.en || body.personName2 || "",
       personName2Gu: translatedPerson2.gu || body.personName2Gu || "",
       personPhoto: body.personPhoto || "",
-      village: body.village || "Savarkundla",
-      villageGu: body.villageGu || "સાવરકુંડલા",
+      village: translatedVillage.en || body.village || "Savarkundla",
+      villageGu: translatedVillage.gu || body.villageGu || "સાવરકુંડલા",
       businessName: translatedBiz.en || body.businessName || "",
       businessNameGu: translatedBiz.gu || body.businessNameGu || "",
       category: body.category || "other",
@@ -158,6 +162,8 @@ export async function POST(request: Request) {
       cityGu: translatedCity.gu || body.cityGu || "સાવરકુંડલા",
       state: body.state || "Gujarat",
       stateGu: body.stateGu || "ગુજરાત",
+      country: body.country || "India",
+      countryGu: body.countryGu || "ભારત",
       address: translatedAddress.en || body.address || "",
       addressGu: translatedAddress.gu || body.addressGu || "",
       mapUrl: body.mapUrl || "",
