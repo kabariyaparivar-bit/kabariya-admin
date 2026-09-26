@@ -42,6 +42,7 @@ export default function AdminDashboardPage() {
     total: 0,
     pending: 0,
     approved: 0,
+    hidden: 0,
   });
 
   // Business Modal
@@ -371,10 +372,8 @@ export default function AdminDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setBusinesses((prev) =>
-          prev.map((b) => (b.id === biz.id ? { ...b, isApproved: nextStatus } : b))
-        );
         showToast(nextStatus ? `Approved: ${biz.businessName}` : `Unapproved: ${biz.businessName}`);
+        await loadBusinesses();
       } else {
         showToast(data.error || "Update failed", "error");
       }
@@ -397,10 +396,8 @@ export default function AdminDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setBusinesses((prev) =>
-          prev.map((b) => (b.id === biz.id ? { ...b, isActive: nextStatus } : b))
-        );
         showToast(nextStatus ? `Activated: ${biz.businessName}` : `Deactivated: ${biz.businessName}`);
+        await loadBusinesses();
       }
     } catch {
       showToast("Network error updating active status", "error");
@@ -568,6 +565,7 @@ export default function AdminDashboardPage() {
   const pendingCount = bizStats.pending;
   const approvedCount = bizStats.approved;
   const totalCount = bizStats.total;
+  const hiddenCount = bizStats.hidden || 0;
 
   const bizPageNumbers = useMemo(() => {
     const totalPages = bizPagination.totalPages;
@@ -768,6 +766,16 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+          <div className="admin-stat-card" style={{ borderColor: hiddenCount > 0 ? "#cbd5e1" : "#e2e8f0" }}>
+            <div className="admin-stat-icon" style={{ background: "#f1f5f9", color: "#64748b" }}>👁️‍🗨️</div>
+            <div>
+              <div className="admin-stat-label">Hidden / Inactive</div>
+              <div className="admin-stat-value" style={{ color: hiddenCount > 0 ? "#64748b" : "#94a3b8" }}>
+                {hiddenCount}
+              </div>
+            </div>
+          </div>
+
           <div className="admin-stat-card">
             <div className="admin-stat-icon" style={{ background: "#f3e8ff", color: "#7e22ce" }}>📅</div>
             <div>
@@ -821,6 +829,13 @@ export default function AdminDashboardPage() {
                 >
                   Approved ({approvedCount})
                 </button>
+                <button
+                  type="button"
+                  className={`admin-pill-btn ${statusFilter === "hidden" ? "active" : ""}`}
+                  onClick={() => setStatusFilter("hidden")}
+                >
+                  Hidden ({hiddenCount})
+                </button>
               </div>
 
               {/* Add Business Button */}
@@ -859,8 +874,8 @@ export default function AdminDashboardPage() {
                       <th>Business &amp; Category</th>
                       <th>Owner / Partner</th>
                       <th>Contact &amp; City</th>
-                      <th>Status</th>
-                      <th>Approve / Live</th>
+                      <th>Approval</th>
+                      <th>Live Status</th>
                       <th style={{ textAlign: "right" }}>Actions</th>
                     </tr>
                   </thead>
@@ -933,29 +948,95 @@ export default function AdminDashboardPage() {
                             <div style={{ fontSize: "0.78rem", color: "#64748b" }}>{biz.city}</div>
                           </td>
                           <td>
-                            <span className={`admin-badge ${biz.isApproved ? "admin-badge-approved" : "admin-badge-pending"}`}>
-                              {biz.isApproved ? "✓ Approved" : "⏳ Pending"}
-                            </span>
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", gap: "6px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                              <span className={`admin-badge ${biz.isApproved ? "admin-badge-approved" : "admin-badge-pending"}`}>
+                                {biz.isApproved ? (
+                                  <>
+                                    <span className="admin-badge-icon">
+                                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="20 6 9 17 4 12" />
+                                      </svg>
+                                    </span>
+                                    <span>Approved</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="admin-badge-icon">
+                                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <polyline points="12 6 12 12 16 14" />
+                                      </svg>
+                                    </span>
+                                    <span>Pending</span>
+                                  </>
+                                )}
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => toggleApproval(biz)}
                                 className={`admin-btn admin-btn-sm ${biz.isApproved ? "admin-btn-secondary" : "admin-btn-success"}`}
-                                title={biz.isApproved ? "Revoke approval" : "Approve this business"}
+                                style={{ padding: "3px 8px", fontSize: "0.74rem" }}
+                                title={biz.isApproved ? "Click to revoke approval" : "Click to approve this business"}
                               >
                                 {biz.isApproved ? "Unapprove" : "✓ Approve"}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => toggleActive(biz)}
-                                className="admin-btn admin-btn-secondary admin-btn-sm"
-                                title="Toggle active status"
-                              >
-                                {biz.isActive === false ? "Hidden" : "Active"}
-                              </button>
                             </div>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={biz.isActive !== false}
+                              onClick={() => toggleActive(biz)}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px 0",
+                              }}
+                              title={biz.isActive !== false ? "Click to set Inactive (Hidden)" : "Click to set Active (Visible)"}
+                            >
+                              <span
+                                style={{
+                                  position: "relative",
+                                  display: "inline-block",
+                                  width: "36px",
+                                  height: "20px",
+                                  borderRadius: "9999px",
+                                  backgroundColor: biz.isActive !== false ? "#10b981" : "#cbd5e1",
+                                  transition: "background-color 0.2s ease",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    top: "2px",
+                                    left: biz.isActive !== false ? "18px" : "2px",
+                                    width: "16px",
+                                    height: "16px",
+                                    borderRadius: "50%",
+                                    backgroundColor: "#ffffff",
+                                    boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+                                    transition: "left 0.2s ease",
+                                  }}
+                                />
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.82rem",
+                                  fontWeight: 600,
+                                  color: biz.isActive !== false ? "#059669" : "#64748b",
+                                  minWidth: "52px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {biz.isActive !== false ? "Active" : "Inactive"}
+                              </span>
+                            </button>
                           </td>
                           <td style={{ textAlign: "right" }}>
                             <div style={{ display: "inline-flex", gap: "6px" }}>

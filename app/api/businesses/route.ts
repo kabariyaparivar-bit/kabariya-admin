@@ -29,10 +29,11 @@ export async function GET(request: Request) {
     const col = db.collection<PersonBusiness>("businesses");
 
     // Concurrently fetch stats for top counters & pill badges
-    const [totalAll, totalPending, totalApproved] = await Promise.all([
+    const [totalAll, totalPending, totalApproved, totalHidden] = await Promise.all([
       col.countDocuments({}),
       col.countDocuments({ isApproved: { $ne: true } }),
       col.countDocuments({ isApproved: true }),
+      col.countDocuments({ isActive: false }),
     ]);
 
     // Build query filter
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
       andConditions.push({ isApproved: { $ne: true } });
     } else if (status === "approved") {
       andConditions.push({ isApproved: true });
+    } else if (status === "hidden" || status === "inactive") {
+      andConditions.push({ isActive: false });
     }
 
     if (category && category !== "all") {
@@ -104,6 +107,7 @@ export async function GET(request: Request) {
         total: totalAll,
         pending: totalPending,
         approved: totalApproved,
+        hidden: totalHidden,
       },
     });
   } catch (error: any) {
