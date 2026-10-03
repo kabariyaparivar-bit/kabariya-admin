@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { PersonBusiness, BUSINESS_CATEGORIES, EventItem, AdminUser } from "@/lib/types";
+import { PersonBusiness, BUSINESS_CATEGORIES, EventItem, AdminUser, BusinessUpdateRequest } from "@/lib/types";
 import { SearchableSelect, SelectOption } from "@/components/SearchableSelect";
 
 export default function AdminDashboardPage() {
@@ -19,7 +19,15 @@ export default function AdminDashboardPage() {
   const [loginError, setLoginError] = useState("");
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<"businesses" | "events" | "settings">("businesses");
+  const [activeTab, setActiveTab] = useState<"businesses" | "events" | "updates" | "settings">("businesses");
+
+  // Business Update Requests State
+  const [updateRequests, setUpdateRequests] = useState<BusinessUpdateRequest[]>([]);
+  const [loadingUpdates, setLoadingUpdates] = useState(false);
+  const [updateStatusFilter, setUpdateStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [updateStats, setUpdateStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [processingUpdateId, setProcessingUpdateId] = useState<string | null>(null);
+  const [confirmUpdateModal, setConfirmUpdateModal] = useState<{ req: BusinessUpdateRequest; action: "approve" | "reject" } | null>(null);
 
   // Businesses State
   const [businesses, setBusinesses] = useState<PersonBusiness[]>([]);
@@ -267,6 +275,13 @@ export default function AdminDashboardPage() {
     }
   }, [isAuthenticated, token]);
 
+  // Load update requests on authentication and filter change
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      loadUpdateRequests(updateStatusFilter);
+    }
+  }, [isAuthenticated, token, updateStatusFilter]);
+
   const loadBusinesses = async (
     pageToLoad = bizPage,
     search = debouncedBizSearch,
@@ -314,6 +329,69 @@ export default function AdminDashboardPage() {
       showToast("Failed to load events", "error");
     } finally {
       setLoadingEvents(false);
+    }
+  };
+
+  const loadUpdateRequests = async (status = updateStatusFilter) => {
+    if (!token) return;
+    setLoadingUpdates(true);
+    try {
+      const res = await fetch(`/api/business-updates?status=${status}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setUpdateRequests(data.data);
+        if (data.stats) setUpdateStats(data.stats);
+      }
+    } catch {
+      showToast("Failed to load update requests", "error");
+    } finally {
+      setLoadingUpdates(false);
+    }
+  };
+
+  const handleReviewUpdate = async (requestId: string, action: "approve" | "reject") => {
+    if (!token) return;
+    setProcessingUpdateId(requestId);
+    try {
+      const res = await fetch("/api/business-updates", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          requestId,
+          action,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(
+          action === "approve"
+            ? "Business listing updated live and request cleared!"
+            : "Update request rejected and deleted."
+        );
+        // Optimistically remove from state immediately
+        setUpdateRequests((prev) => prev.filter((r) => r.id !== requestId));
+        setUpdateStats((prev) => ({
+          ...prev,
+          total: Math.max(0, prev.total - 1),
+          pending: Math.max(0, prev.pending - 1),
+        }));
+        setConfirmUpdateModal(null);
+        await loadUpdateRequests();
+        if (action === "approve") {
+          loadBusinesses();
+        }
+      } else {
+        showToast(data.error || "Failed to process request", "error");
+      }
+    } catch {
+      showToast("Network error while reviewing request", "error");
+    } finally {
+      setProcessingUpdateId(null);
     }
   };
 
@@ -712,6 +790,18 @@ export default function AdminDashboardPage() {
             </button>
             <button
               type="button"
+              className={`admin-tab-btn ${activeTab === "updates" ? "active" : ""}`}
+              onClick={() => setActiveTab("updates")}
+            >
+              <span>✏️ Updates</span>
+              {updateStats.pending > 0 && (
+                <span className="admin-tab-count pending-count" style={{ background: "#ef4444", color: "#fff" }}>
+                  {updateStats.pending} new
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               className={`admin-tab-btn ${activeTab === "settings" ? "active" : ""}`}
               onClick={() => setActiveTab("settings")}
             >
@@ -754,6 +844,26 @@ export default function AdminDashboardPage() {
               <div className="admin-stat-label">Pending Approval</div>
               <div className="admin-stat-value" style={{ color: pendingCount > 0 ? "#b45309" : "#0f172a" }}>
                 {pendingCount}
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="admin-stat-card"
+            style={{
+              borderColor: updateStats.pending > 0 ? "#ef4444" : "#e2e8f0",
+              cursor: "pointer",
+            }}
+            onClick={() => setActiveTab("updates")}
+          >
+            <div className="admin-stat-icon" style={{ background: "#fee2e2", color: "#dc2626" }}>✏️</div>
+            <div>
+              <div className="admin-stat-label">Correction Requests</div>
+              <div className="admin-stat-value" style={{ color: updateStats.pending > 0 ? "#dc2626" : "#0f172a" }}>
+                {updateStats.pending}
+                <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 500, marginLeft: "6px" }}>
+                  pending
+                </span>
               </div>
             </div>
           </div>
@@ -1246,6 +1356,494 @@ export default function AdminDashboardPage() {
 
 
         {/* ============================================================ */}
+        {/* TAB 3: UPDATE REQUESTS                                       */}
+        {/* ============================================================ */}
+        {activeTab === "updates" && (
+          <div>
+            {/* Header Banner */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "20px 24px",
+                marginBottom: "24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "16px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <h3 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+                    ✏️ Business Update Requests
+                  </h3>
+                  <span
+                    style={{
+                      background: updateRequests.length > 0 ? "#ef4444" : "#10b981",
+                      color: "#ffffff",
+                      fontSize: "0.8rem",
+                      fontWeight: 800,
+                      padding: "3px 12px",
+                      borderRadius: "9999px",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {updateRequests.length} {updateRequests.length === 1 ? "Pending" : "Pending"}
+                  </span>
+                </div>
+                <p style={{ color: "#64748b", fontSize: "0.88rem", margin: "6px 0 0 0", maxWidth: "680px", lineHeight: 1.5 }}>
+                  Review and verify correction requests submitted by business owners. Approving applies changes to the live directory immediately and clears the request.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                onClick={() => loadUpdateRequests()}
+                disabled={loadingUpdates}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontWeight: 600,
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                }}
+              >
+                <span>🔄</span>
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {loadingUpdates ? (
+              <div className="admin-table-card" style={{ padding: "50px", textAlign: "center", color: "#64748b" }}>
+                <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⏳</div>
+                <div style={{ fontWeight: 600 }}>Loading update requests from database...</div>
+              </div>
+            ) : updateRequests.length === 0 ? (
+              <div
+                className="admin-table-card"
+                style={{
+                  padding: "60px 20px",
+                  textAlign: "center",
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div style={{ fontSize: "3.5rem", marginBottom: "14px" }}>🎉</div>
+                <h4 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0f172a", marginBottom: "6px" }}>
+                  All Update Requests Cleared!
+                </h4>
+                <p style={{ color: "#64748b", fontSize: "0.92rem", maxWidth: "520px", margin: "0 auto", lineHeight: 1.6 }}>
+                  There are currently no pending update requests. When a business owner submits changes from the website directory, they will appear here for verification.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+                {updateRequests.map((req) => {
+                  const cleanPhone = (req.requesterPhone || "").replace(/\D/g, "");
+                  const regPhone = ((req.oldData as any)?.phone || "").replace(/\D/g, "");
+                  const waVerifyText = `Jai Randal Maa! We received an update request for your business "${req.businessName}" on the Kabariya Parivar Directory. Did you submit this update?`;
+                  const waVerifyUrl = cleanPhone
+                    ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(waVerifyText)}`
+                    : "";
+
+                  // Identify ONLY fields that were actually modified
+                  const changedFields: Array<{ key: string; label: string; oldVal: string; newVal: string }> = [];
+                  const fieldsToCheck: Array<{ key: string; label: string }> = [
+                    { key: "businessName", label: "Business Name (EN)" },
+                    { key: "businessNameGu", label: "Business Name (GU)" },
+                    { key: "category", label: "Category" },
+                    { key: "personName", label: "Contact Person / Owner" },
+                    { key: "personName2", label: "Partner / 2nd Person" },
+                    { key: "phone", label: "Primary Phone" },
+                    { key: "phone2", label: "Secondary Phone" },
+                    { key: "whatsapp", label: "WhatsApp Number" },
+                    { key: "city", label: "City" },
+                    { key: "village", label: "Native Village" },
+                    { key: "address", label: "Address" },
+                    { key: "email", label: "Email" },
+                    { key: "website", label: "Website" },
+                    { key: "description", label: "Description / Services" },
+                  ];
+
+                  fieldsToCheck.forEach((f) => {
+                    const oldV = String((req.oldData as any)?.[f.key] || "").trim();
+                    const newV = String((req.updatedData as any)?.[f.key] || "").trim();
+                    if (newV && oldV !== newV) {
+                      changedFields.push({ key: f.key, label: f.label, oldVal: oldV || "—", newVal: newV });
+                    }
+                  });
+
+                  return (
+                    <div
+                      key={req.id}
+                      style={{
+                        background: "#ffffff",
+                        borderRadius: "14px",
+                        border: "1.5px solid #e2e8f0",
+                        boxShadow: "0 4px 14px rgba(0,0,0,0.05)",
+                        overflow: "hidden",
+                        borderLeft: `5px solid ${req.isOwnerPhoneMatch ? "#10b981" : "#f59e0b"}`,
+                      }}
+                    >
+                      {/* Top Header */}
+                      <div
+                        style={{
+                          padding: "18px 24px",
+                          background: "#fafafa",
+                          borderBottom: "1px solid #e5e7eb",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                          <h3 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#83181f", margin: 0 }}>
+                            {req.businessName}
+                          </h3>
+                          <span
+                            style={{
+                              background: "#e2e8f0",
+                              color: "#475569",
+                              fontSize: "0.75rem",
+                              fontWeight: 700,
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            ID: {req.businessId}
+                          </span>
+                          {(req.updatedData as any)?.category && (
+                            <span
+                              style={{
+                                background: "#fef3c7",
+                                color: "#92400e",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                              }}
+                            >
+                              {(req.updatedData as any)?.categoryLabelEn || (req.updatedData as any)?.category}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: "0.82rem", color: "#64748b", fontWeight: 500 }}>
+                          🕒 {new Date(req.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                        </div>
+                      </div>
+
+                      {/* Card Content Body */}
+                      <div style={{ padding: "20px 24px" }}>
+                        {/* Requester Identity & Owner Verification Box */}
+                        <div
+                          style={{
+                            background: req.isOwnerPhoneMatch ? "#f0fdf4" : "#fffbeb",
+                            border: `1.5px solid ${req.isOwnerPhoneMatch ? "#bbf7d0" : "#fde68a"}`,
+                            borderRadius: "10px",
+                            padding: "16px 20px",
+                            marginBottom: "20px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: "1.02rem", fontWeight: 800, color: "#0f172a" }}>
+                                  👤 Requester: {req.requesterName}
+                                </span>
+                                <span style={{ fontSize: "0.95rem", color: "#334155", fontWeight: 700 }}>
+                                  📞 +91 {req.requesterPhone}
+                                </span>
+
+                                {req.isOwnerPhoneMatch ? (
+                                  <span
+                                    style={{
+                                      background: "#15803d",
+                                      color: "#ffffff",
+                                      padding: "3px 12px",
+                                      borderRadius: "9999px",
+                                      fontSize: "0.78rem",
+                                      fontWeight: 800,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <span>🛡️</span>
+                                    <span>Verified Registered Owner (Phone Matched)</span>
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      background: "#b45309",
+                                      color: "#ffffff",
+                                      padding: "3px 12px",
+                                      borderRadius: "9999px",
+                                      fontSize: "0.78rem",
+                                      fontWeight: 800,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <span>⚠️</span>
+                                    <span>Different Phone Number</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {(req.requestNote || req.changeNote) && (
+                                <div
+                                  style={{
+                                    marginTop: "10px",
+                                    fontSize: "0.9rem",
+                                    color: "#1e293b",
+                                    background: "#ffffff",
+                                    border: "1px solid #e2e8f0",
+                                    padding: "8px 14px",
+                                    borderRadius: "6px",
+                                    display: "inline-block",
+                                  }}
+                                >
+                                  <strong>💬 Note / Reason:</strong> &ldquo;{req.requestNote || req.changeNote}&rdquo;
+                                </div>
+                              )}
+
+                              {!req.isOwnerPhoneMatch && regPhone && (
+                                <div style={{ marginTop: "8px", fontSize: "0.84rem", color: "#92400e", fontWeight: 600 }}>
+                                  ℹ️ Registered phone on file: <strong>+91 {regPhone}</strong>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 1-Click Verification CTA */}
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                              {waVerifyUrl && (
+                                <a
+                                  href={waVerifyUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="admin-btn admin-btn-sm"
+                                  style={{
+                                    background: "#25d366",
+                                    color: "#ffffff",
+                                    borderColor: "#25d366",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontWeight: 700,
+                                    borderRadius: "8px",
+                                    padding: "7px 14px",
+                                  }}
+                                >
+                                  <span>💬 WhatsApp Verify</span>
+                                </a>
+                              )}
+                              <a
+                                href={`tel:${cleanPhone}`}
+                                className="admin-btn admin-btn-secondary admin-btn-sm"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  fontWeight: 600,
+                                  borderRadius: "8px",
+                                  padding: "7px 14px",
+                                }}
+                              >
+                                <span>📞 Call Requester</span>
+                              </a>
+                              {!req.isOwnerPhoneMatch && regPhone && (
+                                <a
+                                  href={`tel:${regPhone}`}
+                                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontWeight: 600,
+                                    borderColor: "#f59e0b",
+                                    borderRadius: "8px",
+                                    padding: "7px 14px",
+                                  }}
+                                >
+                                  <span>📞 Call Registered Owner</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ONLY Changed Fields Diff */}
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                            <h4 style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+                              🔍 Changed Fields Only ({changedFields.length}):
+                            </h4>
+                            <span style={{ fontSize: "0.78rem", color: "#64748b", fontWeight: 600 }}>
+                              {changedFields.length} {changedFields.length === 1 ? "field modified" : "fields modified"}
+                            </span>
+                          </div>
+
+                          {changedFields.length === 0 ? (
+                            <div
+                              style={{
+                                background: "#f8fafc",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "8px",
+                                padding: "14px 18px",
+                                color: "#64748b",
+                                fontSize: "0.88rem",
+                              }}
+                            >
+                              ℹ️ No field changes detected (all values are identical).
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                              {changedFields.map((field) => (
+                                <div
+                                  key={field.key}
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "180px 1fr auto 1fr",
+                                    alignItems: "center",
+                                    gap: "12px",
+                                    background: "#f8fafc",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: "8px",
+                                    padding: "10px 16px",
+                                    fontSize: "0.88rem",
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 700, color: "#334155" }}>
+                                    {field.label}:
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      color: "#64748b",
+                                      background: "#f1f5f9",
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      textDecoration: "line-through",
+                                      wordBreak: "break-word",
+                                    }}
+                                  >
+                                    {field.oldVal}
+                                  </div>
+
+                                  <span style={{ color: "#10b981", fontWeight: 900, fontSize: "1.1rem" }}>
+                                    ➔
+                                  </span>
+
+                                  <div
+                                    style={{
+                                      color: "#065f46",
+                                      background: "#ecfdf5",
+                                      border: "1px solid #a7f3d0",
+                                      padding: "6px 12px",
+                                      borderRadius: "6px",
+                                      fontWeight: 700,
+                                      wordBreak: "break-word",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "8px",
+                                    }}
+                                  >
+                                    <span>{field.newVal}</span>
+                                    <span
+                                      style={{
+                                        fontSize: "0.68rem",
+                                        background: "#10b981",
+                                        color: "#ffffff",
+                                        padding: "1px 6px",
+                                        borderRadius: "4px",
+                                        fontWeight: 800,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      NEW
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom Actions Bar */}
+                      <div
+                        style={{
+                          padding: "16px 24px",
+                          background: "#fafafa",
+                          borderTop: "1px solid #e5e7eb",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "12px",
+                        }}
+                      >
+                        <div style={{ fontSize: "0.84rem", color: "#64748b", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span>💡</span>
+                          <span>Approving will update the live directory immediately and clear this request.</span>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "10px" }}>
+                          <button
+                            type="button"
+                            disabled={processingUpdateId === req.id}
+                            onClick={() => setConfirmUpdateModal({ req, action: "reject" })}
+                            className="admin-btn admin-btn-danger"
+                            style={{
+                              padding: "10px 18px",
+                              borderRadius: "8px",
+                              fontWeight: 700,
+                              fontSize: "0.9rem",
+                            }}
+                          >
+                            ❌ Reject
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processingUpdateId === req.id}
+                            onClick={() => setConfirmUpdateModal({ req, action: "approve" })}
+                            className="admin-btn"
+                            style={{
+                              background: "#10b981",
+                              color: "#ffffff",
+                              borderColor: "#10b981",
+                              padding: "10px 24px",
+                              borderRadius: "8px",
+                              fontWeight: 800,
+                              fontSize: "0.92rem",
+                              boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
+                            }}
+                          >
+                            ✅ Approve &amp; Apply Live
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================================ */}
         {/* TAB 4: SETTINGS                                              */}
         {/* ============================================================ */}
         {activeTab === "settings" && (
@@ -1378,7 +1976,7 @@ export default function AdminDashboardPage() {
                 {/* Location Row: Country & State */}
                 <div className="admin-form-row">
                   <div className="admin-form-group">
-                    <label className="admin-form-label">Country (દેશ) *</label>
+                    <label className="admin-form-label">Country *</label>
                     <SearchableSelect
                       options={adminCountryOptions}
                       value={editingBiz.country || "India"}
@@ -1390,7 +1988,7 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div className="admin-form-group">
-                    <label className="admin-form-label">State (રાજ્ય) *</label>
+                    <label className="admin-form-label">State *</label>
                     <SearchableSelect
                       options={adminStateOptions}
                       value={editingBiz.state || "Gujarat"}
@@ -1408,7 +2006,7 @@ export default function AdminDashboardPage() {
                 {/* Location Row: City & Village */}
                 <div className="admin-form-row">
                   <div className="admin-form-group">
-                    <label className="admin-form-label">City (શહેર) *</label>
+                    <label className="admin-form-label">City *</label>
                     <SearchableSelect
                       options={adminCityOptions}
                       value={isCustomCity ? "__custom__" : (editingBiz.city || "")}
@@ -1420,7 +2018,6 @@ export default function AdminDashboardPage() {
                       loadingText="Loading cities..."
                       allowCustomOption={true}
                       customOptionLabel="✦ Other City / Village (Type custom)..."
-                      customOptionLabelGu="✦ અન્ય શહેર / ગામ (અહીં જાતે લખો)..."
                       onCustomOptionSelect={() => setIsCustomCity(true)}
                       onCustomTextSubmit={(txt) => {
                         setIsCustomCity(true);
@@ -1449,7 +2046,7 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div className="admin-form-group">
-                    <label className="admin-form-label">Native Village (મૂળ વતન / ગામ)</label>
+                    <label className="admin-form-label">Native Village (Optional)</label>
                     <input
                       type="text"
                       className="admin-form-control"
@@ -1647,6 +2244,149 @@ export default function AdminDashboardPage() {
                 onClick={handleDeleteBusiness}
               >
                 Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* BUSINESS UPDATE REQUEST CONFIRMATION MODAL                   */}
+      {/* ============================================================ */}
+      {confirmUpdateModal && (
+        <div
+          className="admin-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !processingUpdateId) {
+              setConfirmUpdateModal(null);
+            }
+          }}
+          style={{ zIndex: 99999 }}
+        >
+          <div className="admin-modal-content" style={{ maxWidth: "490px" }}>
+            <div className="admin-modal-header" style={{ borderBottom: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.2rem" }}>
+                  {confirmUpdateModal.action === "approve" ? "✅" : "⚠️"}
+                </span>
+                <h3 className="admin-modal-title" style={{ fontSize: "1.15rem", fontWeight: 800 }}>
+                  {confirmUpdateModal.action === "approve"
+                    ? "Approve & Apply Live Update?"
+                    : "Reject Update Request?"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={!!processingUpdateId}
+                onClick={() => setConfirmUpdateModal(null)}
+                style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "#64748b" }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="admin-modal-body" style={{ padding: "20px 24px" }}>
+              {confirmUpdateModal.action === "approve" ? (
+                <div>
+                  <p style={{ fontSize: "0.96rem", color: "#1e293b", lineHeight: 1.55, margin: "0 0 14px 0" }}>
+                    Are you sure you want to approve this update for{" "}
+                    <strong style={{ color: "#0f172a" }}>{confirmUpdateModal.req.businessName}</strong>?
+                  </p>
+                  <div
+                    style={{
+                      background: "#f0fdf4",
+                      border: "1.5px solid #bbf7d0",
+                      borderRadius: "10px",
+                      padding: "14px 16px",
+                      fontSize: "0.88rem",
+                      color: "#166534",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    <div>✓ All changed fields will be published immediately to the public directory.</div>
+                    <div>✓ This request will be permanently cleared from the pending queue.</div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: "0.96rem", color: "#1e293b", lineHeight: 1.55, margin: "0 0 14px 0" }}>
+                    Are you sure you want to reject the update request for{" "}
+                    <strong style={{ color: "#0f172a" }}>{confirmUpdateModal.req.businessName}</strong>?
+                  </p>
+                  <div
+                    style={{
+                      background: "#fef2f2",
+                      border: "1.5px solid #fecaca",
+                      borderRadius: "10px",
+                      padding: "14px 16px",
+                      fontSize: "0.88rem",
+                      color: "#991b1b",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    <div>⚠️ No changes will be applied to the live business directory.</div>
+                    <div>⚠️ This request will be deleted permanently without leaving history.</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="admin-modal-footer"
+              style={{
+                borderTop: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                padding: "14px 24px",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                disabled={!!processingUpdateId}
+                onClick={() => setConfirmUpdateModal(null)}
+                style={{ padding: "8px 18px", borderRadius: "8px", fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={confirmUpdateModal.action === "approve" ? "admin-btn" : "admin-btn admin-btn-danger"}
+                style={
+                  confirmUpdateModal.action === "approve"
+                    ? {
+                        background: "#10b981",
+                        color: "#ffffff",
+                        borderColor: "#10b981",
+                        padding: "8px 22px",
+                        borderRadius: "8px",
+                        fontWeight: 800,
+                        fontSize: "0.9rem",
+                        boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
+                      }
+                    : {
+                        padding: "8px 20px",
+                        borderRadius: "8px",
+                        fontWeight: 800,
+                        fontSize: "0.9rem",
+                      }
+                }
+                disabled={!!processingUpdateId}
+                onClick={() => handleReviewUpdate(confirmUpdateModal.req.id, confirmUpdateModal.action)}
+              >
+                {processingUpdateId === confirmUpdateModal.req.id ? (
+                  "Processing..."
+                ) : confirmUpdateModal.action === "approve" ? (
+                  "✓ Approve & Apply Live"
+                ) : (
+                  "✕ Reject & Delete"
+                )}
               </button>
             </div>
           </div>

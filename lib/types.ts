@@ -90,3 +90,19 @@ export interface AdminUser {
   name: string;
   role: "super_admin" | "admin" | "moderator";
 }
+
+export interface BusinessUpdateRequest {
+  id: string;
+  businessId: string;
+  businessName: string;
+  requesterName: string;
+  requesterPhone: string;
+  requestNote?: string;
+  oldData: Partial<PersonBusiness>;
+  updatedData: Partial<PersonBusiness>;
+  isOwnerPhoneMatch: boolean;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  adminNote?: string;
+}

@@ -54,7 +54,7 @@ export function SearchableSelect({
   loadingText = "Loading options...",
   loadingTextGu = "લોડ થઈ રહ્યું છે...",
   required = false,
-  lang = "gu",
+  lang = "en",
   allowCustomOption = false,
   customOptionLabel = "✦ Other / Type Custom Name...",
   customOptionLabelGu = "✦ અન્ય / અહીં જાતે લખો...",
@@ -219,14 +219,6 @@ export function SearchableSelect({
       }
       return <span className="searchable-label-primary">{opt.labelGu || opt.label}</span>;
     } else {
-      if (opt.labelGu && opt.labelGu !== opt.label) {
-        return (
-          <>
-            <span className="searchable-label-primary">{opt.label}</span>
-            <span className="searchable-label-secondary">({opt.labelGu})</span>
-          </>
-        );
-      }
       return <span className="searchable-label-primary">{opt.label}</span>;
     }
   };
