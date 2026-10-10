@@ -106,3 +106,28 @@ export interface BusinessUpdateRequest {
   reviewedAt?: string;
   adminNote?: string;
 }
+
+export interface YajmanMember {
+  id: string;
+  nameEn: string;
+  nameGu: string;
+  villageEn: string;
+  villageGu: string;
+  phone?: string;
+  note?: string;
+}
+
+export interface YagnaYearRecord {
+  id: string;
+  year: number;
+  titleGu?: string;
+  titleEn?: string;
+  samvatGu?: string;
+  mukhyaYajman: YajmanMember[];
+  sahYajman: YajmanMember[];
+  isActive?: boolean;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
