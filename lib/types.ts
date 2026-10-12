@@ -70,12 +70,15 @@ export interface EventItem {
   id: string;
   titleEn: string;
   titleGu: string;
+  title?: string;
   dateEn: string;
   dateGu: string;
+  date?: string;
   timeEn?: string;
   timeGu?: string;
   locationEn: string;
   locationGu: string;
+  location?: string;
   descriptionEn: string;
   descriptionGu: string;
   badgeEn?: string;
@@ -98,6 +101,7 @@ export interface BusinessUpdateRequest {
   requesterName: string;
   requesterPhone: string;
   requestNote?: string;
+  changeNote?: string;
   oldData: Partial<PersonBusiness>;
   updatedData: Partial<PersonBusiness>;
   isOwnerPhoneMatch: boolean;

@@ -38,7 +38,7 @@ export default function AdminDashboardPage() {
   const [loadingBiz, setLoadingBiz] = useState(false);
   const [bizSearch, setBizSearch] = useState("");
   const [debouncedBizSearch, setDebouncedBizSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "hidden">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [bizPage, setBizPage] = useState(1);
   const [bizLimit] = useState(20);
@@ -435,9 +435,10 @@ export default function AdminDashboardPage() {
 
     const matchedEvents = events.filter(
       (ev) =>
-        ev.title?.toLowerCase().includes(q) ||
+        ev.titleEn?.toLowerCase().includes(q) ||
         ev.titleGu?.toLowerCase().includes(q) ||
-        ev.location?.toLowerCase().includes(q)
+        ev.locationEn?.toLowerCase().includes(q) ||
+        ev.locationGu?.toLowerCase().includes(q)
     ).slice(0, 5);
 
     return {
@@ -1280,10 +1281,10 @@ export default function AdminDashboardPage() {
                     >
                       <div>
                         <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                          📅 {ev.title}
+                          📅 {ev.titleEn || ev.titleGu || ev.title}
                         </div>
                         <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "2px" }}>
-                          📍 {ev.location} · {ev.date}
+                          📍 {ev.locationEn || ev.locationGu || ev.location} · {ev.dateEn || ev.dateGu || ev.date}
                         </div>
                       </div>
                       <span style={{ fontSize: "0.74rem", color: "#2563eb", fontWeight: 600 }}>
