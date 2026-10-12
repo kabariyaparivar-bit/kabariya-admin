@@ -85,6 +85,7 @@ export default function AdminDashboardPage() {
     villageEn: string;
     villageGu: string;
     phone?: string;
+    names?: Array<{ id?: string; nameEn: string; nameGu: string }>;
   } | null>(null);
   const [yearModalOpen, setYearModalOpen] = useState(false);
   const [newYearInput, setNewYearInput] = useState<string>(new Date().getFullYear().toString());
@@ -483,6 +484,37 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Auto-translate sub-name in multi-name list
+  const [translatingSubNameIdx, setTranslatingSubNameIdx] = useState<number | null>(null);
+  const handleAutoTranslateSubName = async (index: number, textEn: string) => {
+    if (!textEn.trim()) return;
+    setTranslatingSubNameIdx(index);
+    try {
+      const res = await fetch(`/api/translate?text=${encodeURIComponent(textEn)}&target=gu`);
+      const data = await res.json();
+      if (data.translated) {
+        setEditingYajman((prev) => {
+          if (!prev) return prev;
+          const currentNames = prev.names && prev.names.length > 0 
+            ? [...prev.names] 
+            : [{ id: "1", nameEn: prev.nameEn || "", nameGu: prev.nameGu || "" }];
+          if (currentNames[index]) {
+            currentNames[index] = { ...currentNames[index], nameGu: data.translated };
+          }
+          return {
+            ...prev,
+            names: currentNames,
+            nameGu: index === 0 ? data.translated : prev.nameGu,
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Auto-translation error:", err);
+    } finally {
+      setTranslatingSubNameIdx(null);
+    }
+  };
+
   const handleSaveYajmanPerson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingYajman || !token) return;
@@ -493,8 +525,12 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    if (!editingYajman.nameEn.trim() && !editingYajman.nameGu.trim()) {
-      showToast("Please enter Yajman full name", "error");
+    const rawNames = editingYajman.names && editingYajman.names.length > 0
+      ? editingYajman.names.filter((n) => n.nameEn.trim() || n.nameGu.trim())
+      : [{ id: "1", nameEn: editingYajman.nameEn.trim(), nameGu: editingYajman.nameGu.trim() }];
+
+    if (rawNames.length === 0 || (!rawNames[0].nameEn.trim() && !rawNames[0].nameGu.trim())) {
+      showToast("Please enter at least one Yajman full name", "error");
       return;
     }
 
@@ -503,6 +539,9 @@ export default function AdminDashboardPage() {
       return;
     }
 
+    const primaryEn = rawNames[0].nameEn.trim() || rawNames[0].nameGu.trim();
+    const primaryGu = rawNames[0].nameGu.trim() || rawNames[0].nameEn.trim();
+
     // Find existing year record or prepare new one
     const existingYear = yajmanYears.find((y) => Number(y.year) === targetYear);
     const mukhyaList = existingYear?.mukhyaYajman ? [...existingYear.mukhyaYajman] : [];
@@ -510,8 +549,13 @@ export default function AdminDashboardPage() {
 
     const personObj: YajmanMember = {
       id: editingYajman.personId || `${editingYajman.targetType === "mukhya" ? "my" : "sy"}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      nameEn: editingYajman.nameEn.trim(),
-      nameGu: editingYajman.nameGu.trim() || editingYajman.nameEn.trim(),
+      nameEn: primaryEn,
+      nameGu: primaryGu,
+      names: rawNames.map((sn, sIdx) => ({
+        id: sn.id || `sub-${Date.now()}-${sIdx}`,
+        nameEn: sn.nameEn.trim() || sn.nameGu.trim(),
+        nameGu: sn.nameGu.trim() || sn.nameEn.trim(),
+      })),
       villageEn: editingYajman.villageEn.trim(),
       villageGu: editingYajman.villageGu.trim() || editingYajman.villageEn.trim(),
       phone: editingYajman.phone?.trim() || "",
@@ -2605,6 +2649,7 @@ export default function AdminDashboardPage() {
                         villageEn: "",
                         villageGu: "",
                         phone: "",
+                        names: [{ id: "1", nameEn: "", nameGu: "" }],
                       });
                       setYajmanModalOpen(true);
                     }}
@@ -2752,6 +2797,7 @@ export default function AdminDashboardPage() {
                                   villageEn: "",
                                   villageGu: "",
                                   phone: "",
+                                  names: [{ id: "1", nameEn: "", nameGu: "" }],
                                 });
                                 setYajmanModalOpen(true);
                               }}
@@ -2771,6 +2817,7 @@ export default function AdminDashboardPage() {
                                   villageEn: "",
                                   villageGu: "",
                                   phone: "",
+                                  names: [{ id: "1", nameEn: "", nameGu: "" }],
                                 });
                                 setYajmanModalOpen(true);
                               }}
@@ -2836,21 +2883,50 @@ export default function AdminDashboardPage() {
                                       boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
                                     }}
                                   >
-                                    <div>
-                                      <div style={{ fontSize: "0.98rem", fontWeight: 800, color: "#78350f" }}>
-                                        {m.nameGu || m.nameEn}
-                                      </div>
-                                      {m.nameEn && m.nameGu && m.nameEn !== m.nameGu && (
-                                        <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-                                          {m.nameEn}
-                                        </div>
-                                      )}
-                                      <div style={{ fontSize: "0.82rem", color: "#b45309", marginTop: "3px", fontWeight: 600 }}>
-                                        📍 Village: <strong>{m.villageGu || m.villageEn || "—"}</strong>
-                                        {m.villageEn && m.villageGu && m.villageEn !== m.villageGu && (
-                                          <span style={{ color: "#64748b", fontWeight: 400, marginLeft: "4px" }}>({m.villageEn})</span>
-                                        )}
-                                      </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      {(() => {
+                                        const names = m.names && m.names.length > 0 ? m.names : [{ id: "1", nameEn: m.nameEn || "", nameGu: m.nameGu || "" }];
+                                        const primary = names[0];
+                                        const subs = names.slice(1);
+
+                                        return (
+                                          <div>
+                                            {/* Primary Main Name */}
+                                            <div style={{ fontSize: "1.02rem", fontWeight: 800, color: "#78350f" }}>
+                                              👑 {primary.nameGu || primary.nameEn}
+                                              {primary.nameEn && primary.nameGu && primary.nameEn !== primary.nameGu && (
+                                                <span style={{ fontSize: "0.78rem", color: "#64748b", fontWeight: 500, marginLeft: "6px" }}>({primary.nameEn})</span>
+                                              )}
+                                            </div>
+
+                                            {/* Sub-names shown underneath */}
+                                            {subs.length > 0 && (
+                                              <div style={{ marginTop: "5px", paddingLeft: "10px", borderLeft: "2.5px solid #fde68a", display: "flex", flexDirection: "column", gap: "2px" }}>
+                                                <div style={{ fontSize: "0.72rem", color: "#b45309", fontWeight: 700, textTransform: "uppercase" }}>
+                                                  • સહ-નામો / પરિવાર સભ્યો ({subs.length}):
+                                                </div>
+                                                {subs.map((sn, sIdx) => (
+                                                  <div key={sIdx} style={{ fontSize: "0.88rem", fontWeight: 600, color: "#92400e" }}>
+                                                    • {sn.nameGu || sn.nameEn}
+                                                    {sn.nameEn && sn.nameGu && sn.nameEn !== sn.nameGu && (
+                                                      <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 400, marginLeft: "4px" }}>({sn.nameEn})</span>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+
+                                            <div style={{ fontSize: "0.82rem", color: "#b45309", marginTop: "4px", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                              <span>📍 Village: <strong>{m.villageGu || m.villageEn || "—"}</strong></span>
+                                              {subs.length > 0 && (
+                                                <span style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a", borderRadius: "8px", fontSize: "0.7rem", fontWeight: 800, padding: "1px 7px" }}>
+                                                  મુખ્ય + {subs.length} સહ-નામ
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
 
                                     <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
@@ -2866,6 +2942,9 @@ export default function AdminDashboardPage() {
                                             villageEn: m.villageEn || "",
                                             villageGu: m.villageGu || "",
                                             phone: m.phone || "",
+                                            names: m.names && m.names.length > 0
+                                              ? m.names.map((sn) => ({ id: sn.id, nameEn: sn.nameEn, nameGu: sn.nameGu }))
+                                              : [{ id: "1", nameEn: m.nameEn || "", nameGu: m.nameGu || "" }],
                                           });
                                           setYajmanModalOpen(true);
                                         }}
@@ -2938,21 +3017,45 @@ export default function AdminDashboardPage() {
                                       gap: "10px",
                                     }}
                                   >
-                                    <div>
-                                      <div style={{ fontSize: "0.98rem", fontWeight: 800, color: "#1e293b" }}>
-                                        {s.nameGu || s.nameEn}
-                                      </div>
-                                      {s.nameEn && s.nameGu && s.nameEn !== s.nameGu && (
-                                        <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-                                          {s.nameEn}
-                                        </div>
-                                      )}
-                                      <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: "3px", fontWeight: 600 }}>
-                                        📍 Village: <strong>{s.villageGu || s.villageEn || "—"}</strong>
-                                        {s.villageEn && s.villageGu && s.villageEn !== s.villageGu && (
-                                          <span style={{ color: "#64748b", fontWeight: 400, marginLeft: "4px" }}>({s.villageEn})</span>
-                                        )}
-                                      </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      {(() => {
+                                        const names = s.names && s.names.length > 0 ? s.names : [{ id: "1", nameEn: s.nameEn || "", nameGu: s.nameGu || "" }];
+                                        const primary = names[0];
+                                        const subs = names.slice(1);
+
+                                        return (
+                                          <div>
+                                            {/* Primary Main Name */}
+                                            <div style={{ fontSize: "0.98rem", fontWeight: 800, color: "#1e293b" }}>
+                                              {primary.nameGu || primary.nameEn}
+                                              {primary.nameEn && primary.nameGu && primary.nameEn !== primary.nameGu && (
+                                                <span style={{ fontSize: "0.78rem", color: "#64748b", fontWeight: 500, marginLeft: "6px" }}>({primary.nameEn})</span>
+                                              )}
+                                            </div>
+
+                                            {/* Sub-names */}
+                                            {subs.length > 0 && (
+                                              <div style={{ marginTop: "4px", paddingLeft: "10px", borderLeft: "2px solid #cbd5e1", display: "flex", flexDirection: "column", gap: "2px" }}>
+                                                <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
+                                                  • સહ-નામો ({subs.length}):
+                                                </div>
+                                                {subs.map((sn, sIdx) => (
+                                                  <div key={sIdx} style={{ fontSize: "0.85rem", fontWeight: 600, color: "#475569" }}>
+                                                    • {sn.nameGu || sn.nameEn}
+                                                    {sn.nameEn && sn.nameGu && sn.nameEn !== sn.nameGu && (
+                                                      <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 400, marginLeft: "4px" }}>({sn.nameEn})</span>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+
+                                            <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: "3px", fontWeight: 600 }}>
+                                              📍 Village: <strong>{s.villageGu || s.villageEn || "—"}</strong>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
 
                                     <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
@@ -2968,6 +3071,9 @@ export default function AdminDashboardPage() {
                                             villageEn: s.villageEn || "",
                                             villageGu: s.villageGu || "",
                                             phone: s.phone || "",
+                                            names: s.names && s.names.length > 0
+                                              ? s.names.map((sn) => ({ id: sn.id, nameEn: sn.nameEn, nameGu: sn.nameGu }))
+                                              : [{ id: "1", nameEn: s.nameEn || "", nameGu: s.nameGu || "" }],
                                           });
                                           setYajmanModalOpen(true);
                                         }}
@@ -3831,57 +3937,182 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
-                {/* Name English & Gujarati */}
-                <div className="admin-form-group">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <label className="admin-form-label">Full Name in English *</label>
-                    <span style={{ fontSize: "0.72rem", color: "#64748b" }}>Auto-translates on blur</span>
-                  </div>
-                  <input
-                    type="text"
-                    className="admin-form-control"
-                    placeholder="e.g. Rameshbhai Mohanbhai Kabariya"
-                    value={editingYajman.nameEn}
-                    onChange={(e) => setEditingYajman({ ...editingYajman, nameEn: e.target.value })}
-                    onBlur={(e) => {
-                      if (!editingYajman.nameGu.trim()) {
-                        handleAutoTranslateName(e.target.value);
-                      }
-                    }}
-                    required
-                  />
-                </div>
-
-                <div className="admin-form-group">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <label className="admin-form-label">Full Name in Gujarati *</label>
+                {/* Dynamic Multiple Names Section */}
+                <div style={{
+                  background: editingYajman.targetType === "mukhya" ? "#fffdf5" : "#f8fafc",
+                  border: editingYajman.targetType === "mukhya" ? "1.5px solid #fde68a" : "1.5px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "16px",
+                  marginBottom: "16px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                    <div>
+                      <div style={{ fontWeight: 800, color: editingYajman.targetType === "mukhya" ? "#92400e" : "#1e293b", fontSize: "0.95rem" }}>
+                        {editingYajman.targetType === "mukhya" ? "👑 મુખ્ય યજમાન પરિવારના સભ્યો / નામો (Chief Yajman Names)" : "🤝 યજમાન સભ્યો / નામો (Yajman Names)"}
+                      </div>
+                      <div style={{ fontSize: "0.76rem", color: "#64748b", marginTop: "2px" }}>
+                        તમે એક જ પરિવાર હેઠળ એક કે તેથી વધુ વ્યક્તિઓના નામ (દા.ત. ભાઈઓ, પુત્રો) ઉમેરી શકો છો
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => handleAutoTranslateName(editingYajman.nameEn)}
-                      disabled={isTranslatingName || !editingYajman.nameEn.trim()}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        fontSize: "0.78rem",
-                        color: "#9e1f26",
-                        cursor: "pointer",
-                        fontWeight: 700,
+                      onClick={() => {
+                        setEditingYajman((prev) => {
+                          if (!prev) return prev;
+                          const currentNames = prev.names && prev.names.length > 0 
+                            ? [...prev.names] 
+                            : [{ id: "1", nameEn: prev.nameEn || "", nameGu: prev.nameGu || "" }];
+                          return {
+                            ...prev,
+                            names: [...currentNames, { id: `sub-${Date.now()}`, nameEn: "", nameGu: "" }],
+                          };
+                        });
                       }}
+                      className="admin-btn admin-btn-sm"
+                      style={{ background: "#fef3c7", color: "#92400e", borderColor: "#fde68a", fontWeight: 700 }}
                     >
-                      {isTranslatingName ? "⏳ Translating..." : "🔄 Auto Translate"}
+                      ➕ સહ-નામ ઉમેરો (+ Add Sub-Name)
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    className="admin-form-control"
-                    placeholder="દા.ત. રમેશભાઈ મોહનભાઈ કાબરીયા"
-                    value={editingYajman.nameGu}
-                    onChange={(e) => setEditingYajman({ ...editingYajman, nameGu: e.target.value })}
-                    required
-                  />
-                  <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: "4px" }}>
-                    💡 નોંધ: અંગ્રેજી નામ લખીને બહાર ક્લિક કરશો એટલે અહીં ગુજરાતી નામ આપમેળે આવી જશે. તમે જરૂર મુજબ સુધારી પણ શકો છો.
-                  </div>
+
+                  {/* Render each person name input box */}
+                  {(() => {
+                    const currentNames = editingYajman.names && editingYajman.names.length > 0 
+                      ? editingYajman.names 
+                      : [{ id: "1", nameEn: editingYajman.nameEn || "", nameGu: editingYajman.nameGu || "" }];
+
+                    return currentNames.map((item, idx) => (
+                      <div
+                        key={item.id || idx}
+                        style={{
+                          background: idx === 0 ? (editingYajman.targetType === "mukhya" ? "#fffcf2" : "#f8fafc") : "#ffffff",
+                          border: idx === 0 ? "1.5px solid #f59e0b" : "1px solid #cbd5e1",
+                          borderRadius: "8px",
+                          padding: "12px",
+                          marginTop: idx > 0 ? "10px" : "8px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ fontSize: "0.84rem", fontWeight: 800, color: idx === 0 ? "#b45309" : "#334155" }}>
+                              {idx === 0 
+                                ? "⭐ મુખ્ય નામ (Primary Main Name) *" 
+                                : `• સહ-નામ #${idx} (Sub-name #${idx})`}
+                            </span>
+                            {idx === 0 && (
+                              <span style={{ fontSize: "0.7rem", color: "#92400e", background: "#fef3c7", padding: "1px 6px", borderRadius: "8px", fontWeight: 700 }}>
+                                મુખ્ય હાઇલાઇટ
+                              </span>
+                            )}
+                          </div>
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingYajman((prev) => {
+                                  if (!prev) return prev;
+                                  const updated = currentNames.filter((_, i) => i !== idx);
+                                  return {
+                                    ...prev,
+                                    names: updated,
+                                    nameEn: updated[0]?.nameEn || "",
+                                    nameGu: updated[0]?.nameGu || "",
+                                  };
+                                });
+                              }}
+                              style={{
+                                background: "#fee2e2",
+                                color: "#b91c1c",
+                                border: "1px solid #fecaca",
+                                borderRadius: "6px",
+                                fontSize: "0.72rem",
+                                padding: "2px 8px",
+                                cursor: "pointer",
+                                fontWeight: 700,
+                              }}
+                            >
+                              🗑️ Remove
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Name in English */}
+                        <div style={{ marginBottom: "8px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                            <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>Full Name in English *</label>
+                            <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>Auto-translates on blur</span>
+                          </div>
+                          <input
+                            type="text"
+                            className="admin-form-control"
+                            placeholder="e.g. Rameshbhai Mohanbhai Kabariya"
+                            value={item.nameEn}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingYajman((prev) => {
+                                if (!prev) return prev;
+                                const updated = [...currentNames];
+                                updated[idx] = { ...updated[idx], nameEn: val };
+                                return {
+                                  ...prev,
+                                  names: updated,
+                                  nameEn: idx === 0 ? val : prev.nameEn,
+                                };
+                              });
+                            }}
+                            onBlur={(e) => {
+                              if (!item.nameGu.trim()) {
+                                handleAutoTranslateSubName(idx, e.target.value);
+                              }
+                            }}
+                            required
+                          />
+                        </div>
+
+                        {/* Name in Gujarati */}
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                            <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>Full Name in Gujarati *</label>
+                            <button
+                              type="button"
+                              onClick={() => handleAutoTranslateSubName(idx, item.nameEn)}
+                              disabled={translatingSubNameIdx === idx || !item.nameEn.trim()}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                fontSize: "0.74rem",
+                                color: "#9e1f26",
+                                cursor: "pointer",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {translatingSubNameIdx === idx ? "⏳ Translating..." : "🔄 Auto Translate"}
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            className="admin-form-control"
+                            placeholder="દા.ત. રમેશભાઈ મોહનભાઈ કાબરીયા"
+                            value={item.nameGu}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingYajman((prev) => {
+                                if (!prev) return prev;
+                                const updated = [...currentNames];
+                                updated[idx] = { ...updated[idx], nameGu: val };
+                                return {
+                                  ...prev,
+                                  names: updated,
+                                  nameGu: idx === 0 ? val : prev.nameGu,
+                                };
+                              });
+                            }}
+                            required
+                          />
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
 
                 {/* Village English & Gujarati */}

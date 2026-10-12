@@ -111,6 +111,13 @@ export interface BusinessUpdateRequest {
   adminNote?: string;
 }
 
+export interface YajmanSubMember {
+  id?: string;
+  nameEn: string;
+  nameGu: string;
+  phone?: string;
+}
+
 export interface YajmanMember {
   id: string;
   nameEn: string;
@@ -119,6 +126,7 @@ export interface YajmanMember {
   villageGu: string;
   phone?: string;
   note?: string;
+  names?: YajmanSubMember[];
 }
 
 export interface YagnaYearRecord {

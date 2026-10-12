@@ -30,7 +30,7 @@ npm install
 Copy `.env.example` to `.env.local` (already pre-configured with MongoDB Atlas connection string):
 ```bash
 # Ensure .env.local exists with:
-MONGODB_URI=mongodb:///kabariyaparivar?ssl=true&replicaSet=atlas-6k086k-shard-0&authSource=admin&retryWrites=true&w=majority
+MONGODB_URI=mongodb:///**********?ssl=true&replicaSet=********=admin&retryWrites=true&w=majority
 JWT_SECRET=************************
 ADMIN_DEFAULT_USERNAME=********
 ADMIN_DEFAULT_PASSWORD=**********
